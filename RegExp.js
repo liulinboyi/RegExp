@@ -575,6 +575,7 @@ function iswordchar(c) {
 
 function die(message) {
     g.error = message;
+    throw new Error(message);
     // longjmp(g.kaboom, 1);
 }
 
@@ -676,10 +677,13 @@ function addrange(a, b) {
     if (a > b)
         die("invalid character class range");
     // if (g.yycc.end + 2 == g.yycc.spans + nelem(g.yycc.spans))
-    // if (g.yycc.end + 2 == g.yycc.spans + g.yycc.spans.length)
-    //     die("too many character class ranges");
+    //      die("too many character class ranges");
     // g.yycc.end++ = a;
     // g.yycc.end++ = b;
+
+    if (g.yycc.end.slice(2, g.yycc.end.length) == g.yycc.spans + g.yycc.spans.length) {
+        die("too many character class ranges");
+    }
 
     // ??
     g.yycc.end = g.yycc.end.slice(a, g.yycc.end.length);
