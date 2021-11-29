@@ -15,4 +15,12 @@
 "/root/temp/hello.mp3".match(/.+\/(.+\..+)$/)
 
 "noonday".match(/\B../)
+
+"_foo0_(x,y)".match(/^([_a-zA-Z0-9]*)(?:\(.*\))/)
+
+"_foo0_(x,y)".match(/^((?:[_a-zA-Z])+(?:[_a-zA-Z\d])*)(?:\((.*)\))?/)
+
+"0_foo0_(x,y)".match(/^((?:[_a-zA-Z])+(?:[_a-zA-Z\d])*)(?:\((.*)\))?/) // no match
+
+"_foo0_  (x,y)".match(/^((?:[_a-zA-Z])+(?:[_a-zA-Z\d])*)[ ]*(?:\((.*)\))?/)
 ```

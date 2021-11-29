@@ -67,11 +67,19 @@ I_NWORD = 14;
 I_LPAR = 15;
 I_RPAR = 16
 
-
+let ccclass_memory = []
+for (let i = 0; i < 16; i++) {
+    ccclass_memory.push({
+        end: 3452816845, // 参考C语言
+        spans: Array(64).fill(3452816845)
+    })
+}
 
 let g = {
     sub: [],
-    prog: null
+    prog: {
+        cclass: ccclass_memory
+    }
 }
 
 // 由于JavaScript中无法使用指针访问内存地址，在移植C语言程序时，使用数组中放置空对象模拟一片内存空间，暂时先放100个内存单元
@@ -89,7 +97,7 @@ function recomp(pattern, cflags) {
     let j = 0;
 
     g.pstart = null;
-    g.prog = {}; // 分配内存
+    // g.prog = {}; // 分配内存
 
     n = pattern.length * 2;
     if (n > 0) {
@@ -391,7 +399,7 @@ function parseatom() {
     }
     if (g.lookahead == L_REF) {
         atom = newnode(P_REF);
-        if (g.yychar == 0 || g.yychar > g.nsub || !g.sub[g.yychar])
+        if (g.yychar == '' || g.yychar > g.nsub || !g.sub[g.yychar])
             die("invalid back-reference");
         atom.n = g.yychar;
         atom.x = g.sub[g.yychar];
@@ -556,8 +564,9 @@ function incclasscanon(cc, c) {
 
 function incclass(cc, c) {
     let p;
-    for (p = cc.spans; p < cc.end; p += 2)
-        if (p[0] <= c && c <= p[1])
+    // for (p = cc.spans; p < cc.end; p += 2)
+    for (p = 0; p < cc.end; p += 2)
+        if (cc.spans[p] <= c && c <= cc.spans[p + 1])
             return 1;
     return 0;
 }
@@ -616,7 +625,7 @@ function nextrune() {
             case 'x':
                 g.yychar = hex(g.source++) << 4;
                 g.yychar += hex(g.source++);
-                if (g.yychar == 0) {
+                if (g.yychar == '') { // ??
                     g.yychar = '0';
                     return 1;
                 }
@@ -626,7 +635,7 @@ function nextrune() {
                 g.yychar += hex(g.source++) << 8;
                 g.yychar += hex(g.source++) << 4;
                 g.yychar += hex(g.source++);
-                if (g.yychar == 0) {
+                if (g.yychar == '') { // ??
                     g.yychar = '0';
                     return 1;
                 }
@@ -649,12 +658,27 @@ function newcclass() {
     // if (g.ncclass >= nelem(g.prog.cclass))
     if (g.ncclass >= g.prog.cclass.length)
         die("too many character classes");
-    g.yycc = g.prog.cclass + g.ncclass++;
-    g.yycc.end = g.yycc.spans;
+    // g.yycc = g.prog.cclass + g.ncclass++;
+    g.yycc = ccclass_memory[g.ncclass++];
+    g.yycc.end = g.yycc.spans[0]; // ??
+    rangeIndex = 0; // 新的[]区间，索引清零
 }
 
 function addranges_d() {
     addrange('0', '9');
+}
+
+function addranges_D() {
+    addrange(0, '0' - 1);
+    addrange('9' + 1, 0xFFFF);
+}
+
+function addranges_W() {
+    addrange(0, '0' - 1);
+    addrange('9' + 1, 'A' - 1);
+    addrange('Z' + 1, '_' - 1);
+    addrange('_' + 1, 'a' - 1);
+    addrange('z' + 1, 0xFFFF);
 }
 
 function addranges_w() {
@@ -662,6 +686,16 @@ function addranges_w() {
     addrange('A', 'Z');
     addrange('_', '_');
     addrange('a', 'z');
+}
+
+function addranges_S() {
+    addrange(0, 0x9 - 1);
+    addrange(0x9 + 1, 0xA - 1);
+    addrange(0xD + 1, 0x20 - 1);
+    addrange(0x20 + 1, 0xA0 - 1);
+    addrange(0xA0 + 1, 0x2028 - 1);
+    addrange(0x2029 + 1, 0xFEFF - 1);
+    addrange(0xFEFF + 1, 0xFFFF);
 }
 
 function addranges_s() {
@@ -673,6 +707,8 @@ function addranges_s() {
     addrange(0xFEFF, 0xFEFF);
 }
 
+let rangeIndex = 0; // 为了避免复杂，以JavaScript的方式实现了相同功能
+
 function addrange(a, b) {
     if (a > b)
         die("invalid character class range");
@@ -681,13 +717,14 @@ function addrange(a, b) {
     // g.yycc.end++ = a;
     // g.yycc.end++ = b;
 
-    if (g.yycc.end.slice(2, g.yycc.end.length) == g.yycc.spans + g.yycc.spans.length) {
+    if (rangeIndex + 2 == 1 + g.yycc.spans.length) { // ??
         die("too many character class ranges");
     }
 
     // ??
-    g.yycc.end = g.yycc.end.slice(a, g.yycc.end.length);
-    g.yycc.end = g.yycc.end.slice(b, g.yycc.end.length);
+    g.yycc.spans[rangeIndex++] = a;
+    g.yycc.spans[rangeIndex++] = b;
+    g.yycc.end = rangeIndex; // 无法访问指针，使用JavaScript的方式解决
 }
 
 function isalpharune(c) {
@@ -698,6 +735,101 @@ function isalpharune(c) {
 function isunicodeletter(c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || isalpharune(c);
 }
+
+function lexclass() {
+    let type = L_CCLASS;
+    let quoted, havesave, havedash;
+    let save = 0;
+
+    newcclass();
+
+    quoted = nextrune();
+    if (!quoted && g.yychar == '^') {
+        type = L_NCCLASS;
+        quoted = nextrune();
+    }
+
+    havesave = havedash = 0;
+    for (;;) {
+        // if (g.yychar == 0)
+        if (g.yychar == '')
+            die("unterminated character class");
+        if (!quoted && g.yychar == ']')
+            break;
+
+        if (!quoted && g.yychar == '-') {
+            if (havesave) {
+                if (havedash) {
+                    addrange(save, '-');
+                    havesave = havedash = 0;
+                } else {
+                    havedash = 1;
+                }
+            } else {
+                save = '-';
+                havesave = 1;
+            }
+        } else if (quoted && "DSWdsw".includes(g.yychar)) {
+            if (havesave) {
+                addrange(save, save);
+                if (havedash)
+                    addrange('-', '-');
+            }
+            switch (g.yychar) {
+                case 'd':
+                    addranges_d();
+                    break;
+                case 's':
+                    addranges_s();
+                    break;
+                case 'w':
+                    addranges_w();
+                    break;
+                case 'D':
+                    addranges_D();
+                    break;
+                case 'S':
+                    addranges_S();
+                    break;
+                case 'W':
+                    addranges_W();
+                    break;
+            }
+            havesave = havedash = 0;
+        } else {
+            if (quoted) {
+                if (g.yychar == 'b')
+                    g.yychar = '\b';
+                else if (g.yychar == '0')
+                    g.yychar = 0;
+                /* else identity escape */
+            }
+            if (havesave) {
+                if (havedash) {
+                    addrange(save, g.yychar);
+                    havesave = havedash = 0;
+                } else {
+                    addrange(save, save);
+                    save = g.yychar;
+                }
+            } else {
+                save = g.yychar;
+                havesave = 1;
+            }
+        }
+
+        quoted = nextrune();
+    }
+
+    if (havesave) {
+        addrange(save, save);
+        if (havedash)
+            addrange('-', '-');
+    }
+
+    return type;
+}
+
 
 
 function lex() {
@@ -766,15 +898,18 @@ function lex() {
     if (g.yychar == '(') {
         if (g.source[0] == '?') {
             if (g.source[1] == ':') {
-                g.source += 2;
+                // g.source += 2;
+                g.source = g.source.slice(2, g.source.length);
                 return L_NC;
             }
             if (g.source[1] == '=') {
-                g.source += 2;
+                // g.source += 2;
+                g.source = g.source.slice(2, g.source.length);
                 return L_PLA;
             }
             if (g.source[1] == '!') {
-                g.source += 2;
+                // g.source += 2;
+                g.source = g.source.slice(2, g.source.length);
                 return L_NLA;
             }
         }
@@ -854,7 +989,7 @@ function match(pc, sp, bol, flags, out) {
             case I_ANYNL:
                 sp = sp.slice(chartorune(tempc, sp, "c"), sp.length);
                 c = tempc.c;
-                if (c == 0) // JavaScript中不使用严格等号 "" == 0 为true
+                if (c == '') // JavaScript中不使用严格等号 "" == 0 为true
                     return 0;
                 pcIndex = memory.indexOf(pc);
                 pc = memory[pcIndex + 1];
@@ -862,7 +997,7 @@ function match(pc, sp, bol, flags, out) {
             case I_ANY:
                 sp = sp.slice(chartorune(tempc, sp, "c"), sp.length);
                 c = tempc.c;
-                if (c == 0)
+                if (c == '')
                     return 0;
                 if (isnewline(c))
                     return 0;
@@ -872,7 +1007,7 @@ function match(pc, sp, bol, flags, out) {
             case I_CHAR:
                 sp = sp.slice(chartorune(tempc, sp, "c"), sp.length);
                 c = tempc.c;
-                if (c == 0)
+                if (c == '')
                     return 0;
                 if (flags & REG_ICASE)
                     c = canon(c);
@@ -884,7 +1019,7 @@ function match(pc, sp, bol, flags, out) {
             case I_CCLASS:
                 sp = sp.slice(chartorune(tempc, sp, "c"), sp.length);
                 c = tempc.c;
-                if (c == 0)
+                if (c == '')
                     return 0;
                 if (flags & REG_ICASE) {
                     if (!incclasscanon(pc.cc, canon(c)))
@@ -899,7 +1034,7 @@ function match(pc, sp, bol, flags, out) {
             case I_NCCLASS:
                 sp = sp.slice(chartorune(tempc, sp, "c"), sp.length);
                 c = tempc.c;
-                if (c == 0)
+                if (c == '')
                     return 0;
                 if (flags & REG_ICASE) {
                     if (incclasscanon(pc.cc, canon(c)))
@@ -945,7 +1080,7 @@ function match(pc, sp, bol, flags, out) {
                 }
                 return 0;
             case I_EOL:
-                if (sp == 0) { // 在C语言和JavaScript非严格等号里面成立
+                if (sp == '') { // 在C语言和JavaScript非严格等号里面成立
                     pcIndex = memory.indexOf(pc);
                     pc = memory[pcIndex + 1];
                     break;
@@ -1011,7 +1146,8 @@ function regexec(prog, sp, sub, eflags) {
         if (!sub.sub[i]) {
             sub.sub[i] = {}
         }
-        sub.sub[i].sp = sub.sub[i].ep = null;
+        // sub.sub[i].sp = sub.sub[i].ep = null;
+        sub.sub[i].sp = sub.sub[i].ep = "";
     }
 
     return !match(prog.start, sp, sp, prog.flags | eflags, sub);
@@ -1022,11 +1158,14 @@ function main() {
         sub: []
     }
 
-    let p = recomp(String.raw `.+\/(.+\..+)$`, 0);
-    let s = "/root/temp/hello.mp3";
+    // let p = recomp(String.raw `.+\/(.+\..+)$`, 0);
+    // let s = "/root/temp/hello.mp3";
 
     // let p = recomp(String.raw `\B..`, 0);
     // let s = "noonday";
+
+    let p = recomp(String.raw `^((?:[_a-zA-Z])+(?:[_a-zA-Z\d])*)[ ]*(?:\((.*)\))`, 0);
+    let s = "_foo0_  (x,y)";
 
     console.log("nsub =", p.nsub)
     if (!regexec(p, s, m, 0)) {
